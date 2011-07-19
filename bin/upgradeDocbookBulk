@@ -1,0 +1,25 @@
+#!/bin/bash
+# File: upgradeDocbookBulk
+# vim: ft=sh
+XMLDIR=`pwd`
+if [ "$#" -ge 1 ];then
+    XMLDIR=$1
+fi
+
+echo "STARTING DOCBOOK CONVERSION"
+
+SCRIPTDIR=`dirname $0`
+ERRORS=0
+for f in `find $XMLDIR -name '*.xml'`
+do
+    $SCRIPTDIR/upgradeDocbook $f
+    if [ "$?" -ne "0" ];then
+        ERRORS=1
+    fi
+done
+
+echo "[DONE]"
+if [ "$ERRORS" -eq "1" ];then
+    echo "Script completed with errors; check logs for details."
+    exit 1
+fi

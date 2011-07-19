@@ -1,0 +1,107 @@
+#!/bin/bash
+# File: upgradeDocbook
+# vim: ft=sh
+if [ "$#" -ne 1 ];then
+    echo "USAGE: $0 <xml file>"
+    exit 1
+fi
+
+XMLFILE=$1
+
+# Customize the following based on your system
+
+# Location of the db4-upgrade.xsl
+UPGRADE_XSL=/usr/share/xml/docbook/stylesheet/docbook5/db4-upgrade.xsl
+
+# Location of the PHP script for replacing entities
+ENT_REPLACE_SCRIPT=`dirname $0`/docbook-replace-entities.php
+
+# Location of the PHP script for restoring entities
+ENT_RESTORE_SCRIPT=`dirname $0`/docbook-restore-entities.php
+
+# Location of the PHP script for adding XML declarations
+XML_INTRO_SCRIPT=`dirname $0`/docbook-xml-intro.php
+
+# Location of the PHP script for processing programlistings
+XML_PL_SCRIPT=`dirname $0`/docbook-programlistings.php
+
+# Provide a space-separated list of files that should be skipped
+SKIPFILES="language-snippets.xml"
+
+# Begin
+
+echo "Processing $XMLFILE"
+
+# Check if this is a skipfile
+for i in $SKIPFILES;do 
+    if [[ `basename "$XMLFILE"` = $i ]];then
+        echo "    Skipping; file is in skip list"
+        exit
+    fi
+done
+
+# Copy the file to a temporary location
+WORKFILE="$XMLFILE.transform"
+cp $XMLFILE $WORKFILE
+
+# Replace entities
+printf "%-64s" "    Replacing XML entities..."
+php $ENT_REPLACE_SCRIPT $WORKFILE
+if [ "$?" -ne "0" ];then
+    printf " %7s\n" "[FAIL]"
+    echo "    FAILED: Replacing XML entities in $XMLFILE" >&2
+    exit 1
+fi
+printf " %7s\n" "[DONE]"
+
+printf "%-64s\n" "    Converting from DocBook 4 to 5..."
+xsltproc $UPGRADE_XSL $WORKFILE > $WORKFILE.db5
+if [ `stat --print="%s" $WORKFILE.db5` -lt 200 ];then
+    printf " %7s\n" "[FAIL]"
+    echo "    FAILED: Conversion of $XMLFILE" >&2
+    exit 1
+fi
+printf " %7s\n" "[DONE]"
+
+# Overwrite working file with transformed content
+mv $WORKFILE.db5 $WORKFILE
+
+# Restore entities
+printf "%-64s" "    Restoring XML entities..."
+php $ENT_RESTORE_SCRIPT $WORKFILE
+if [ "$?" -ne "0" ];then
+    printf " %7s\n" "[FAIL]"
+    echo "    FAILED: Restoring XML entities in $XMLFILE" >&2
+    exit 1
+fi
+printf " %7s\n" "[DONE]"
+
+printf "%-64s" "    Stripping conversion comment..."
+sed --regexp-extended --in-place 's/<!-- Converted by db4-upgrade version 1.0 -->//' $WORKFILE
+if [ "$?" -ne "0" ];then
+    printf " %7s\n" "[FAIL]"
+    echo "    FAILED: Stripping DB4 conversion comments in $XMLFILE" >&2
+    exit 1
+fi
+printf " %7s\n" "[DONE]"
+
+printf "%-64s" "    Adding XML declaration..."
+php $XML_INTRO_SCRIPT $WORKFILE
+if [ "$?" -ne "0" ];then
+    printf " %7s\n" "[FAIL]"
+    echo "    FAILED: Adding XML declaration in $XMLFILE" >&2
+    exit 1
+fi
+printf " %7s\n" "[DONE]"
+
+printf "%-64s" "    Fixing programlisting blocks..."
+php $XML_PL_SCRIPT $WORKFILE 1>&2
+if [ "$?" -ne "0" ];then
+    printf " %7s\n" "[FAIL]"
+    echo "    FAILED: Fixing program listings in $XMLFILE" >&2
+    exit 1
+fi
+printf " %7s\n" "[DONE]"
+
+mv $WORKFILE $XMLFILE
+exit 0
